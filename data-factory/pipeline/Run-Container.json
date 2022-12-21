@@ -1,0 +1,230 @@
+{
+	"name": "Run-Container",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get-ACR-Login-Server",
+				"type": "WebActivity",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"url": {
+						"value": "@{concat(pipeline().parameters.key_vault_url, '/secrets/ACR-LOGIN-SERVER/?api-version=7.0')}\n",
+						"type": "Expression"
+					},
+					"method": "GET",
+					"authentication": {
+						"type": "MSI",
+						"resource": "https://vault.azure.net"
+					}
+				}
+			},
+			{
+				"name": "Get-ACR-Password",
+				"type": "WebActivity",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"url": {
+						"value": "@{concat(pipeline().parameters.key_vault_url, '/secrets/ACR-PASSWORD/?api-version=7.0')}\n",
+						"type": "Expression"
+					},
+					"method": "GET",
+					"authentication": {
+						"type": "MSI",
+						"resource": "https://vault.azure.net"
+					}
+				}
+			},
+			{
+				"name": "Get-ACR-Username",
+				"type": "WebActivity",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"url": {
+						"value": "@{concat(pipeline().parameters.key_vault_url, '/secrets/ACR-USERNAME/?api-version=7.0')}\n",
+						"type": "Expression"
+					},
+					"method": "GET",
+					"authentication": {
+						"type": "MSI",
+						"resource": "https://vault.azure.net"
+					}
+				}
+			},
+			{
+				"name": "Get-ACI-Proxy-Url",
+				"type": "WebActivity",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"url": {
+						"value": "@{concat(pipeline().parameters.key_vault_url, '/secrets/ACI-PROXY-URL/?api-version=7.0')}\n",
+						"type": "Expression"
+					},
+					"method": "GET",
+					"authentication": {
+						"type": "MSI",
+						"resource": "https://vault.azure.net"
+					}
+				}
+			},
+			{
+				"name": "Get-ACI-Proxy-Key",
+				"type": "WebActivity",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"url": {
+						"value": "@{concat(pipeline().parameters.key_vault_url, '/secrets/ACI-PROXY-KEY/?api-version=7.0')}\n",
+						"type": "Expression"
+					},
+					"method": "GET",
+					"authentication": {
+						"type": "MSI",
+						"resource": "https://vault.azure.net"
+					}
+				}
+			},
+			{
+				"name": "Run-Container-Group",
+				"type": "WebActivity",
+				"dependsOn": [
+					{
+						"activity": "Get-ACR-Login-Server",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					},
+					{
+						"activity": "Get-ACR-Username",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					},
+					{
+						"activity": "Get-ACR-Password",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					},
+					{
+						"activity": "Get-ACI-Proxy-Url",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					},
+					{
+						"activity": "Get-ACI-Proxy-Key",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 3,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"url": {
+						"value": "@{concat('https://', activity('Get-ACI-Proxy-Url').output.value, '/api/trigger?polling=true')}\n",
+						"type": "Expression"
+					},
+					"method": "POST",
+					"headers": {
+						"x-functions-key": {
+							"value": "@{activity('Get-ACI-Proxy-Key').output.value}",
+							"type": "Expression"
+						}
+					},
+					"body": {
+						"value": "type: Microsoft.ContainerInstance/containerGroups\napiVersion: 2018-10-01\nlocation: eastus\nname: @{pipeline().parameters.command}\ntags: null\nproperties:\n  containers:\n  - name: app1\n    properties:\n      environmentVariables:\n        - Name: command\n          Value: @{pipeline().parameters.command}\n        - Name: secret_attributes\n          Value: @{concat('''{\"cloud\": \"azure\", \"url\": \"', pipeline().parameters.key_vault_url, '\"}''')}\n      image: @{concat(activity('Get-ACR-Login-Server').output.value, '/', pipeline().parameters.container, ':', pipeline().parameters.version)}\n      resources:\n        requests:\n          cpu: @{pipeline().parameters.cpu}\n          memoryInGB: @{pipeline().parameters.memoryInGB}\n  osType: @{pipeline().parameters.osType}\n  restartPolicy: @{pipeline().parameters.restartPolicy}\n  imageRegistryCredentials:\n  - server: @{activity('Get-ACR-Login-Server').output.value}\n    username: @{activity('Get-ACR-Username').output.value}\n    password: @{activity('Get-ACR-Password').output.value}",
+						"type": "Expression"
+					},
+					"httpRequestTimeout": "00:05:00",
+					"authentication": {
+						"type": "MSI",
+						"resource": "https://vault.azure.net"
+					}
+				}
+			}
+		],
+		"parameters": {
+			"container": {
+				"type": "string",
+				"defaultValue": ""
+			},
+			"version": {
+				"type": "string",
+				"defaultValue": "latest"
+			},
+			"command": {
+				"type": "string",
+				"defaultValue": "dbml_to_ddl"
+			},
+			"cpu": {
+				"type": "string",
+				"defaultValue": "1"
+			},
+			"memoryInGB": {
+				"type": "string",
+				"defaultValue": "2"
+			},
+			"osType": {
+				"type": "string",
+				"defaultValue": "Linux"
+			},
+			"restartPolicy": {
+				"type": "string",
+				"defaultValue": "Never"
+			},
+			"key_vault_url": {
+				"type": "string",
+				"defaultValue": "https://digitaltwin-dev-kv.vault.azure.net"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2022-12-08T20:02:01Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}
